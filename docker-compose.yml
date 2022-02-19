@@ -1,0 +1,76 @@
+version: '3'
+
+services:
+  pgsql:
+    image: postgres:14
+    hostname: pgsql
+    environment:
+    - POSTGRES_USER=$POSTGRES_USER
+    - POSTGRES_PASSWORD=$POSTGRES_PSWD
+    - POSTGRES_DB=$POSTGRES_DTBS
+    volumes:
+    - pgsql-data:/var/lib/postgresql/data
+    - ./api/database/datatypes.sql:/docker-entrypoint-initdb.d/10-movies.sql
+    - ./api/database/functions:/docker-entrypoint-initdb.d/20-movies.sql
+    - ./api/database/structure.sql:/docker-entrypoint-initdb.d/30-movies.sql
+    networks:
+    - pgsql-network
+
+  pgsql-cli-local:
+    image: pygmy/pgcli
+    container_name: pgsql_cli
+    command: postgresql://$POSTGRES_USER:$POSTGRES_PSWD@pgsql/$POSTGRES_DTBS
+    stdin_open: true
+    tty: true
+    links:
+    - pgsql
+    volumes:
+    - pgsqlcli-home:/root
+    networks:
+    - pgsql-network
+
+  movies_api:
+    container_name: movies_api
+    hostname: movies_api
+    build:
+      context: ./docker/api
+    working_dir: /app/api
+    command: /app/api/movies-venv/bin/gunicorn --reload --bind 0.0.0.0:$BACKEND_FLASK_PORT main.movies:app
+    tty: true
+    env_file: .env
+    environment:
+    - PYTHONPATH=/app/api/src
+    - FLASK_PORT=$BACKEND_FLASK_PORT
+    - FLASK_APP=$BACKEND_FLASK_APP
+    - FLASK_HOST=$BACKEND_FLASK_RUN_HOST
+    - FLASK_ENV=$BACKEND_FLASK_ENV
+    ports:
+    - $BACKEND_FLASK_PORT:$BACKEND_FLASK_PORT
+    volumes:
+    - .:/app:delegated
+    - home:/home/$LOCAL_USER_NAME
+    networks:
+    - pgsql-network
+
+  movies_app:
+    container_name: movies_app
+    hostname: movies_app
+    build:
+      context: ./docker/app
+    command: yarn dev
+    working_dir: /app/app
+    tty: true
+    env_file: .env
+    ports:
+    - $VITE_PORT:$VITE_PORT
+    volumes:
+    - .:/app:delegated
+    - home:/home/$LOCAL_USER_NAME
+
+volumes:
+  pgsql-data:
+  pgsqlcli-home:
+  home:
+
+networks:
+  pgsql-network:
